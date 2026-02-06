@@ -3,30 +3,45 @@ import os
 from datetime import datetime
 from db_connection import get_db_connection
 
-def fetch_gdp_data():
-    """Fetch latest GDP data from FRED API"""
+def fetch_fred_data(series_id, limit=5):
+    """
+    Fetch data for any FRED series
+
+    Args:
+        series_id: FRED series identifier (e.g., 'GDP', 'FEDFUNDS')
+        limit: Number of recent observations to fetch
+    
+    Returns:
+        List of observations from FRED API
+    """
     API_KEY = os.getenv('FRED_API_KEY')
     
     url = "https://api.stlouisfed.org/fred/series/observations"
     params = {
-        "series_id": "GDP",
+        "series_id": series_id,
         "api_key": API_KEY,
         "file_type": "json",
-        "limit": 5,  # Get last 5 quarters
+        "limit": limit,
         "sort_order": "desc"
     }
     
-    response = requests.get(url, params=params)
-    data = response.json()
+    try:
+        response = requests.get(url, params=params)
+        response.raise_for_status()  # Raises error for bad status codes
+        data = response.json()
+        return data['observations']
+    except requests.exceptions.RequestException as e:
+        print(f"API error: {e}")
+        return []  # Return empty list on failure
     
-    return data['observations']
-
+    
 def insert_data(indicator_id, observations):
     """Insert economic data into database"""
     conn = get_db_connection()
     cur = conn.cursor()
     
     inserted_count = 0
+    skipped_count = 0
     
     for obs in observations:
         date = obs['date']
@@ -34,6 +49,7 @@ def insert_data(indicator_id, observations):
         
         # Skip if value is '.' (missing data)
         if value == '.':
+            skipped_count += 1
             continue
             
         try:
@@ -48,32 +64,63 @@ def insert_data(indicator_id, observations):
                 
         except Exception as e:
             print(f"Error inserting {date}: {e}")
+            skipped_count += 1
             continue
     
     conn.commit()
     cur.close()
     conn.close()
     
-    return inserted_count
+    return inserted_count, skipped_count
+
+def fetch_and_store_indicator(indicator_id, series_id, limit=5):
+    """Fetch and store data for a specific indicator"""
+    print(f"\nFetching {indicator_id} data from FRED...")
+    
+    observations = fetch_fred_data(series_id, limit)
+    print(f"  Found {len(observations)} observations")
+    
+    inserted, skipped = insert_data(indicator_id, observations)
+    print(f"  Inserted: {inserted}, Skipped: {skipped}")
+    
+    return inserted
 
 if __name__ == "__main__":
-    print("Fetching GDP data from FRED...")
-    gdp_data = fetch_gdp_data()
+    # Fetch all 3 indicators
+    indicators = [
+        ("GDP", "GDP", 5),
+        ("FEDFUNDS", "FEDFUNDS", 10),  # More data points since it's daily
+        ("UMCSENT", "UMCSENT", 5)
+    ]
     
-    print(f"Found {len(gdp_data)} observations")
+    total_inserted = 0
     
-    inserted = insert_data("GDP", gdp_data)
-    print(f"Inserted {inserted} new records into database")
+    for indicator_id, series_id, limit in indicators:
+        inserted = fetch_and_store_indicator(indicator_id, series_id, limit)
+        total_inserted += inserted
     
-    # Verify
+    print(f"\n{'='*50}")
+    print(f"Total new records inserted: {total_inserted}")
+    print(f"{'='*50}")
+    
+    # Show latest data for each indicator
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("SELECT date, value FROM economic_indicators WHERE indicator_id = 'GDP' ORDER BY date DESC LIMIT 5")
-    results = cur.fetchall()
     
-    print("\nLatest GDP data in database:")
-    for date, value in results:
-        print(f"  {date}: ${value:.2f} billion")
+    print("\nLatest data in database:")
+    for indicator_id, _, _ in indicators:
+        cur.execute("""
+            SELECT date, value 
+            FROM economic_indicators 
+            WHERE indicator_id = %s 
+            ORDER BY date DESC 
+            LIMIT 3
+        """, (indicator_id,))
+        
+        results = cur.fetchall()
+        print(f"\n{indicator_id}:")
+        for date, value in results:
+            print(f"  {date}: {value}")
     
     cur.close()
     conn.close()
