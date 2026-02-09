@@ -2,6 +2,7 @@ import requests
 import os
 from datetime import datetime
 from db_connection import get_db_connection
+from validate_data import validate_value, validate_date
 
 def fetch_fred_data(series_id, limit=5):
     """
@@ -35,13 +36,15 @@ def fetch_fred_data(series_id, limit=5):
         return []  # Return empty list on failure
     
     
+
 def insert_data(indicator_id, observations):
-    """Insert economic data into database"""
+    """Insert economic data into database with validation"""
     conn = get_db_connection()
     cur = conn.cursor()
     
     inserted_count = 0
     skipped_count = 0
+    validation_failures = []
     
     for obs in observations:
         date = obs['date']
@@ -51,25 +54,55 @@ def insert_data(indicator_id, observations):
         if value == '.':
             skipped_count += 1
             continue
+        
+        # Validate date
+        date_valid, date_error = validate_date(date)
+        if not date_valid:
+            validation_failures.append(date_error)
+            skipped_count += 1
+            continue
+        
+        # Validate value
+        try:
+            numeric_value = float(value)
+        except ValueError:
+            validation_failures.append(f"Invalid numeric value: {value}")
+            skipped_count += 1
+            continue
+        
+        value_valid, value_error = validate_value(indicator_id, numeric_value)
+        if not value_valid:
+            validation_failures.append(value_error)
+            skipped_count += 1
+            continue
             
+        # Insert if all validations pass
         try:
             cur.execute("""
                 INSERT INTO economic_indicators (indicator_id, date, value)
                 VALUES (%s, %s, %s)
                 ON CONFLICT (indicator_id, date) DO NOTHING
-            """, (indicator_id, date, float(value)))
+            """, (indicator_id, date, numeric_value))
             
             if cur.rowcount > 0:
                 inserted_count += 1
                 
         except Exception as e:
-            print(f"Error inserting {date}: {e}")
+            validation_failures.append(f"Database error for {date}: {e}")
             skipped_count += 1
             continue
     
     conn.commit()
     cur.close()
     conn.close()
+    
+    # Print validation failures if any
+    if validation_failures:
+        print(f"  Validation failures:")
+        for failure in validation_failures[:5]:  # Show first 5
+            print(f"    - {failure}")
+        if len(validation_failures) > 5:
+            print(f"    ... and {len(validation_failures) - 5} more")
     
     return inserted_count, skipped_count
 
