@@ -19,3 +19,7 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+
+# logs
+*.log
+data_pipeline.log
