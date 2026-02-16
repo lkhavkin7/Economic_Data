@@ -46,6 +46,21 @@ async def list_tools() -> list[Tool]:
                 },
                 "required": ["indicator_id"]
             }
+        ),
+        Tool(
+            name="fetch_fresh_data",
+            description="Fetch fresh data from FRED API and update database",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "indicator_id": {
+                        "type": "string",
+                        "description": "Indicator ID to fetch, or 'all' for all indicators",
+                        "enum": ["GDP", "FEDFUNDS", "UMCSENT", "all"]
+                    }
+                },
+                "required": ["indicator_id"]
+            }
         )
     ]
 
@@ -128,11 +143,49 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 text=f"No data found for {indicator_id}"
             )]
     
+    elif name == "fetch_fresh_data":
+        from fetch_data import fetch_and_store_indicator
+        
+        indicator_id = arguments["indicator_id"]
+        
+        if indicator_id == "all":
+            indicators = [
+                ("GDP", "GDP", 5),
+                ("FEDFUNDS", "FEDFUNDS", 10),
+                ("UMCSENT", "UMCSENT", 5)
+            ]
+            
+            results = {}
+            for ind_id, series_id, limit in indicators:
+                try:
+                    inserted = fetch_and_store_indicator(ind_id, series_id, limit)
+                    results[ind_id] = f"{inserted} new records"
+                except Exception as e:
+                    results[ind_id] = f"Error: {str(e)}"
+            
+            return [TextContent(
+                type="text",
+                text=json.dumps(results, indent=2)
+            )]
+        else:
+            # Fetch single indicator
+            try:
+                inserted = fetch_and_store_indicator(indicator_id, indicator_id, 10)
+                return [TextContent(
+                    type="text",
+                    text=f"Fetched {inserted} new records for {indicator_id}"
+                )]
+            except Exception as e:
+                return [TextContent(
+                    type="text",
+                    text=f"Error fetching {indicator_id}: {str(e)}"
+                )]
     else:
         return [TextContent(
             type="text",
             text=f"Unknown tool: {name}"
         )]
+            
 
 async def main():
     """Run the MCP server"""
