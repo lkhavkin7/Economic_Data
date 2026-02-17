@@ -197,6 +197,27 @@ Logs are written to:
 
 Log format: `YYYY-MM-DD HH:MM:SS - LEVEL - MESSAGE`
 
+## Architecture
+```
+┌─────────────┐     ┌──────────────┐     ┌─────────────────┐     ┌────────────┐
+│   FRED API  │────▶│ fetch_data.py│────▶│ validate_data.py│────▶│ PostgreSQL │
+└─────────────┘     └──────────────┘     └─────────────────┘     └────────────┘
+                                                                        │
+┌─────────────┐                                                         │
+│scheduler.py │─── Automates daily fetching ──────────────────────────▶│
+└─────────────┘                                                         │
+                                                                        ▼
+                                                               ┌─────────────────┐
+                                                               │  mcp_server.py  │
+                                                               └─────────────────┘
+                                                                        │
+                                                                        ▼
+                                                               ┌─────────────────┐
+                                                               │  AI Assistants  │
+                                                               │    (Claude)     │
+                                                               └─────────────────┘
+```
+
 ## Future Enhancements
 
 - [ ] Add more economic indicators (unemployment, inflation)

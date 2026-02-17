@@ -34,3 +34,17 @@ Running initial update...
 2026-02-15 17:42:25,358 - INFO - [OK] UMCSENT: 0 new records
 2026-02-15 17:42:25,358 - INFO - Update complete. Total new records: 0
 2026-02-15 17:42:25,358 - INFO - ==================================================
+2026-02-17 10:13:47,364 - INFO - Economic Data Pipeline Scheduler Started
+2026-02-17 10:13:47,364 - INFO - Current time: 2026-02-17 10:13:47.364510
+2026-02-17 10:13:47,364 - INFO - Scheduled tasks:
+2026-02-17 10:13:47,364 - INFO -   - Daily update at 9:00 AM
+2026-02-17 10:13:47,364 - INFO - 
+Running initial update...
+2026-02-17 10:13:47,364 - INFO - ==================================================
+2026-02-17 10:13:47,365 - INFO - Starting scheduled data update
+2026-02-17 10:13:47,365 - INFO - ==================================================
+2026-02-17 10:13:47,757 - INFO - [OK] GDP: 0 new records
+2026-02-17 10:13:48,131 - INFO - [OK] FEDFUNDS: 0 new records
+2026-02-17 10:13:48,472 - INFO - [OK] UMCSENT: 0 new records
+2026-02-17 10:13:48,472 - INFO - Update complete. Total new records: 0
+2026-02-17 10:13:48,472 - INFO - ==================================================
