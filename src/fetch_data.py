@@ -83,7 +83,8 @@ def insert_data(indicator_id, observations):
                 VALUES (%s, %s, %s)
                 ON CONFLICT (indicator_id, date) DO NOTHING
             """, (indicator_id, date, numeric_value))
-            
+            # Prevent duplicate data - if same indicator and date exists, skip insertion
+
             if cur.rowcount > 0:
                 inserted_count += 1
                 
