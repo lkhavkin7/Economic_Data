@@ -23,3 +23,11 @@ Thumbs.db
 # logs
 *.log
 data_pipeline.log
+
+# Lambda build artifacts
+layer/
+package/
+*.zip
+
+# pytest
+.pytest_cache/

@@ -1,9 +1,11 @@
 import asyncio
+import json
+
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
-import json
-from db_connection import get_db_connection
+
+from src.db_connection import get_db_connection
 
 # Create MCP server instance
 app = Server("economic-data-server")
@@ -144,7 +146,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             )]
     
     elif name == "fetch_fresh_data":
-        from fetch_data import fetch_and_store_indicator
+        from src.fetch_data import fetch_and_store_indicator
         
         indicator_id = arguments["indicator_id"]
         
