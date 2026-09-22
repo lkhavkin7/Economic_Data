@@ -1,9 +1,5 @@
--- Drop tables if they exist (for clean setup)
-DROP TABLE IF EXISTS economic_indicators;
-DROP TABLE IF EXISTS indicator_metadata;
-
 -- Metadata about each economic indicator
-CREATE TABLE indicator_metadata (
+CREATE TABLE IF NOT EXISTS indicator_metadata (
     indicator_id VARCHAR(50) PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     description TEXT,
@@ -13,7 +9,7 @@ CREATE TABLE indicator_metadata (
 );
 
 -- Historical data for all indicators
-CREATE TABLE economic_indicators (
+CREATE TABLE IF NOT EXISTS economic_indicators (
     id SERIAL PRIMARY KEY,
     indicator_id VARCHAR(50) REFERENCES indicator_metadata(indicator_id),
     date DATE NOT NULL,
@@ -23,7 +19,9 @@ CREATE TABLE economic_indicators (
 );
 
 -- Insert metadata for our 3 indicators
-INSERT INTO indicator_metadata (indicator_id, name, description, frequency, units) VALUES
+INSERT INTO indicator_metadata (indicator_id, name, description, frequency, units)
+VALUES
 ('GDP', 'Gross Domestic Product', 'Total market value of goods and services', 'quarterly', 'billions USD'),
 ('FEDFUNDS', 'Federal Funds Rate', 'Interest rate banks charge each other for overnight loans', 'daily', 'percent'),
-('UMCSENT', 'Consumer Sentiment Index', 'University of Michigan Consumer Sentiment', 'monthly', 'index');
+('UMCSENT', 'Consumer Sentiment Index', 'University of Michigan Consumer Sentiment', 'monthly', 'index')
+ON CONFLICT (indicator_id) DO NOTHING;
