@@ -1,0 +1,27 @@
+{
+  "note": "SAMPLE DATA for protocol testing only. These are placeholder numbers, not real FRED values. Replace with a real export when you build the cache.",
+  "series": {
+    "GDP": {
+      "units": "placeholder",
+      "observations": [
+        {"date": "2025-10-01", "value": 100.0},
+        {"date": "2026-01-01", "value": 101.5}
+      ]
+    },
+    "FEDFUNDS": {
+      "units": "placeholder",
+      "observations": [
+        {"date": "2026-07-01", "value": 4.0},
+        {"date": "2026-08-01", "value": 4.0},
+        {"date": "2026-09-01", "value": 3.75}
+      ]
+    },
+    "UMCSENT": {
+      "units": "placeholder",
+      "observations": [
+        {"date": "2026-08-01", "value": 60.0},
+        {"date": "2026-09-01", "value": 62.5}
+      ]
+    }
+  }
+}
