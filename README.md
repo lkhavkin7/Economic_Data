@@ -2,6 +2,8 @@
 
 Automated ETL pipeline for fetching, validating, and storing economic indicators from the FRED API, with Model Context Protocol (MCP) integration for AI assistant access. Deployed and verified end-to-end on AWS (Lambda, RDS, VPC); the paid infrastructure has since been torn down, but the deployment tooling to stand it back up remains in the repo.
 
+> **Status (Nov 2026): rewrite in progress.** The pipeline below was built and verified end to end on AWS (Lambda, RDS, custom VPC), then torn down to control cost. A full rewrite is underway: local development with Docker Compose, upserts so FRED revisions are captured, a backfill mode, a repaired test suite, Terraform for the infrastructure, CI/CD with GitHub Actions, and a scheduled daily run. Until it lands, some local commands below don't work as documented (see [Known issues](#known-issues)).
+
 ## Overview
 
 This project demonstrates production-grade data engineering practices by building a pipeline that:
@@ -121,7 +123,8 @@ python -m src.fetch_data
 
 #### Local: Start MCP Server
 ```bash
-python -m src.mcp_server
+python -m src.mcp_server   # v1 server: currently broken under MCP SDK 2.x, see Known issues
+python mcp_server_v2.py    # v2 server (MCP SDK 2.x)
 ```
 
 #### AWS Lambda
@@ -235,7 +238,17 @@ pip install -r requirements.txt
 pytest -v
 ```
 
-33 tests currently pass across all four modules (`fetch_data`, `validate_data`, `mcp_server`, and the Lambda handler), covering data validation boundaries, insert/skip logic, MCP tool responses, and the Lambda's `setup`/`fetch`/`verify` modes.
+28 tests pass across `fetch_data`, `validate_data`, and the Lambda handler, covering data validation boundaries, insert/skip logic, and the Lambda's `setup`/`fetch`/`verify` modes. `tests/test_mcp_server.py` currently fails at collection because it targets the v1 server; porting it to v2 is part of the rewrite.
+
+## Known issues
+
+These are being fixed in the rewrite:
+
+- **No local-only credential path.** `src/db_connection.py` reads credentials only from AWS Secrets Manager, so the pipeline can't run against a plain local Postgres yet.
+- **v1 MCP server is broken under MCP SDK 2.x.** `src/mcp_server.py` uses the pre-2.0 API. `mcp_server_v2.py` is the working server.
+- **FRED revisions are not captured.** Inserts use `ON CONFLICT DO NOTHING`, so revised values never overwrite earlier ones.
+- **FRED API failures are silent.** A failed request returns an empty list instead of raising.
+- **`mcp_config.json` and `config/.env.example`** reference `POSTGRES_PASSWORD`, which the code no longer reads.
 
 ## Architecture
 
