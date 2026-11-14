@@ -6,9 +6,10 @@ series with its name, units, frequency, valid range and lookback.
 """
 from __future__ import annotations
 
-import os
-from dataclasses import dataclass, field
-from typing import Mapping
+from dataclasses import dataclass
+
+from pydantic import SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 # ---------------------------------------------------------------------------
@@ -114,33 +115,22 @@ def get_indicator(indicator_id: str) -> Indicator:
 # Settings
 # ---------------------------------------------------------------------------
 
-@dataclass(frozen=True)
-class Settings:
+class Settings(BaseSettings):
+    """Settings read from environment variables.
+
+    Each field is filled from the environment variable with the same name in
+    capitals (db_host from DB_HOST). Arguments passed to Settings() take
+    priority over the environment. Secrets are SecretStr, which prints as
+    '**********'; call .get_secret_value() to read one.
+    """
+
+    model_config = SettingsConfigDict(frozen=True)
+
     db_host: str = "localhost"
     db_port: int = 5432
     db_name: str = "econ_data"
     db_user: str = "econ"
-    # repr=False keeps secrets out of print(settings) and log lines.
-    db_password: str | None = field(default=None, repr=False)
+    db_password: SecretStr | None = None
     # ARN of the AWS Secrets Manager secret that holds the database credentials.
     db_secret_arn: str | None = None
-    fred_api_key: str | None = field(default=None, repr=False)
-
-
-def load_settings(env: Mapping[str, str] | None = None) -> Settings:
-    """Build Settings from environment variables.
-
-    `env` defaults to the real environment; passing a dict reads from that
-    instead. Variables that are not set fall back to the defaults on Settings,
-    or to None for the password, secret ARN and FRED API key.
-    """
-    env = os.environ if env is None else env
-    return Settings(
-        db_host=env.get("DB_HOST", Settings.db_host),
-        db_port=int(env.get("DB_PORT", Settings.db_port)),
-        db_name=env.get("DB_NAME", Settings.db_name),
-        db_user=env.get("DB_USER", Settings.db_user),
-        db_password=env.get("DB_PASSWORD"),
-        db_secret_arn=env.get("DB_SECRET_ARN"),
-        fred_api_key=env.get("FRED_API_KEY"),
-    )
+    fred_api_key: SecretStr | None = None

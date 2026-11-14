@@ -12,7 +12,7 @@ from typing import Iterator
 
 import psycopg2
 
-from .config import Settings, load_settings
+from .config import Settings
 
 CONNECT_TIMEOUT_SECONDS = 10
 
@@ -35,8 +35,9 @@ def get_credentials(settings: Settings) -> tuple[str, str]:
     A non-empty password in config wins. Otherwise the user and password are
     read from the secret. Raises ValueError if neither source is set.
     """
-    if settings.db_password:
-        return settings.db_user, settings.db_password
+    password = settings.db_password.get_secret_value() if settings.db_password else ""
+    if password:
+        return settings.db_user, password
 
     if settings.db_secret_arn:
         secret = _fetch_secret(settings.db_secret_arn)
@@ -50,7 +51,7 @@ def get_credentials(settings: Settings) -> tuple[str, str]:
 
 def connect(settings: Settings | None = None):
     """Open a new connection. The caller is responsible for closing it."""
-    settings = load_settings() if settings is None else settings
+    settings = Settings() if settings is None else settings
     user, password = get_credentials(settings)
     return psycopg2.connect(
         host=settings.db_host,
