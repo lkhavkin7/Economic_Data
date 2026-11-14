@@ -4,3 +4,5 @@ requests
 mcp>=2.0.0, <3
 pytest
 pytest-asyncio
+pydantic>=2,<3
+pydantic-settings>=2,<3
