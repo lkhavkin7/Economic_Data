@@ -1,8 +1,8 @@
 """Config for the pipeline.
 
 Holds two things: the settings (database location, credentials, FRED API key),
-read from environment variables, and the indicators, one entry per tracked
-series with its name, units, frequency, valid range and lookback.
+read from environment variables and a .env file, and the indicators, one entry
+per tracked series with its name, units, frequency, valid range and lookback.
 """
 from __future__ import annotations
 
@@ -116,15 +116,22 @@ def get_indicator(indicator_id: str) -> Indicator:
 # ---------------------------------------------------------------------------
 
 class Settings(BaseSettings):
-    """Settings read from environment variables.
+    """Settings read from environment variables and a .env file.
 
-    Each field is filled from the environment variable with the same name in
-    capitals (db_host from DB_HOST). Arguments passed to Settings() take
-    priority over the environment. Secrets are SecretStr, which prints as
-    '**********'; call .get_secret_value() to read one.
+    Each field is filled from the variable with the same name in capitals
+    (db_host from DB_HOST). A value comes from the first of these that has it:
+    arguments passed to Settings(), environment variables, the .env file in the
+    current directory, the default below. Other variables in .env are ignored.
+    Secrets are SecretStr, which prints as '**********'; call
+    .get_secret_value() to read one.
     """
 
-    model_config = SettingsConfigDict(frozen=True)
+    model_config = SettingsConfigDict(
+        frozen=True,
+        env_file=".env",
+        env_file_encoding="utf-8-sig",  # also accepts a file saved with a BOM
+        extra="ignore",
+    )
 
     db_host: str = "localhost"
     db_port: int = 5432

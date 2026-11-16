@@ -36,6 +36,53 @@ def test_settings_read_environment_variables(monkeypatch):
     assert settings.fred_api_key.get_secret_value() == "abc123"
 
 
+def write_env_file(tmp_path, text):
+    path = tmp_path / ".env"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def test_settings_read_values_from_an_env_file(tmp_path):
+    path = write_env_file(
+        tmp_path, "DB_PORT=6543\nDB_PASSWORD=from-file\nFRED_API_KEY = abc123\n"
+    )
+
+    settings = Settings(_env_file=path)
+
+    assert settings.db_port == 6543
+    assert settings.db_password.get_secret_value() == "from-file"
+    assert settings.fred_api_key.get_secret_value() == "abc123"
+    assert settings.db_host == "localhost"  # not in the file: default
+
+
+def test_environment_variables_take_priority_over_the_env_file(tmp_path, monkeypatch):
+    path = write_env_file(tmp_path, "DB_HOST=from-file\nDB_NAME=from-file\n")
+    monkeypatch.setenv("DB_HOST", "from-environment")
+
+    settings = Settings(_env_file=path)
+
+    assert settings.db_host == "from-environment"
+    assert settings.db_name == "from-file"
+
+
+def test_variables_in_the_env_file_that_are_not_settings_are_ignored(tmp_path):
+    path = write_env_file(tmp_path, "POSTGRES_PASSWORD=legacy\nSOMETHING_ELSE=1\nDB_USER=me\n")
+    assert Settings(_env_file=path).db_user == "me"
+
+
+def test_an_env_file_saved_with_a_byte_order_mark_is_read_correctly(tmp_path):
+    # Some Windows editors and PowerShell 5.1 put a BOM at the start of the file,
+    # which would otherwise turn the first name into "\ufeffDB_HOST".
+    path = tmp_path / ".env"
+    path.write_bytes(b"\xef\xbb\xbfDB_HOST=from-bom-file\nDB_USER=me\n")
+    settings = Settings(_env_file=path)
+    assert (settings.db_host, settings.db_user) == ("from-bom-file", "me")
+
+
+def test_a_missing_env_file_is_not_an_error(tmp_path):
+    assert Settings(_env_file=tmp_path / "nope.env").db_host == "localhost"
+
+
 def test_arguments_take_priority_over_the_environment(monkeypatch):
     monkeypatch.setenv("DB_HOST", "from-environment")
     assert Settings(db_host="from-argument").db_host == "from-argument"
