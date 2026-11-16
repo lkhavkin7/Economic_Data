@@ -1,4 +1,8 @@
--- Metadata about each economic indicator
+-- Safe to run repeatedly: every statement uses IF NOT EXISTS and none removes data.
+-- This file only creates tables; the rows of indicator_metadata are written
+-- by the pipeline from config.
+
+-- Definition of each indicator.
 CREATE TABLE IF NOT EXISTS indicator_metadata (
     indicator_id VARCHAR(50) PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
@@ -8,20 +12,12 @@ CREATE TABLE IF NOT EXISTS indicator_metadata (
     source VARCHAR(100) DEFAULT 'FRED'
 );
 
--- Historical data for all indicators
+-- Stored observations: one row per indicator per date.
 CREATE TABLE IF NOT EXISTS economic_indicators (
     id SERIAL PRIMARY KEY,
     indicator_id VARCHAR(50) REFERENCES indicator_metadata(indicator_id),
     date DATE NOT NULL,
     value DECIMAL(15,4),
     fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(indicator_id, date)  -- Prevent duplicate data for same indicator/date
+    UNIQUE(indicator_id, date)  -- the pipeline's upsert relies on this
 );
-
--- Insert metadata for our 3 indicators
-INSERT INTO indicator_metadata (indicator_id, name, description, frequency, units)
-VALUES
-('GDP', 'Gross Domestic Product', 'Total market value of goods and services', 'quarterly', 'billions USD'),
-('FEDFUNDS', 'Federal Funds Rate', 'Interest rate banks charge each other for overnight loans', 'daily', 'percent'),
-('UMCSENT', 'Consumer Sentiment Index', 'University of Michigan Consumer Sentiment', 'monthly', 'index')
-ON CONFLICT (indicator_id) DO NOTHING;

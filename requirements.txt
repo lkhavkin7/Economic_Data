@@ -1,8 +1,6 @@
 boto3
 psycopg2-binary
 requests
-mcp>=2.0.0, <3
-pytest
-pytest-asyncio
+mcp>=2.0.0,<3
 pydantic>=2,<3
 pydantic-settings>=2,<3
