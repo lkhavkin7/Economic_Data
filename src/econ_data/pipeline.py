@@ -1,10 +1,12 @@
 """Pipeline that loads FRED observations into the database.
 
 run_pipeline() writes the indicator definitions from config to the database,
-then, for each indicator, fetches its latest observations from FRED, validates
-them and upserts them. It returns one RunSummary per indicator. A FRED failure
-for one indicator is recorded in its summary and the other indicators still
-run; a database error stops the run and rolls it back.
+then, for each indicator, fetches its observations from FRED, validates them
+and upserts them. An incremental run fetches the latest `lookback`
+observations of each indicator; a backfill run fetches its full history. It
+returns one RunSummary per indicator. A FRED failure for one indicator is
+recorded in its summary and the other indicators still run; a database error
+stops the run and rolls it back.
 """
 from __future__ import annotations
 
@@ -170,17 +172,19 @@ def run_indicator(
     settings: Settings,
     fetch: Callable = fetch_observations,
     today: date | None = None,
+    backfill: bool = False,
 ) -> RunSummary:
-    """Fetch, validate and upsert the latest observations for one indicator.
+    """Fetch, validate and upsert the observations for one indicator.
 
-    Requests indicator.lookback observations. A FredError, or a response with
-    no observations, is returned as a summary with `error` set. Database
-    errors are not caught.
+    Requests indicator.lookback observations, or the full history if
+    `backfill` is true. A FredError, or a response with no observations, is
+    returned as a summary with `error` set. Database errors are not caught.
     """
     indicator_id = indicator.indicator_id
+    limit = None if backfill else indicator.lookback
 
     try:
-        observations = fetch(indicator, indicator.lookback, settings)
+        observations = fetch(indicator, limit, settings)
     except FredError as exc:
         return _failed(indicator_id, str(exc))
     if not observations:
@@ -224,8 +228,12 @@ def run_pipeline(
     indicators: Sequence[Indicator] = INDICATORS,
     fetch: Callable = fetch_observations,
     today: date | None = None,
+    backfill: bool = False,
 ) -> list[RunSummary]:
     """Run every indicator in one database transaction and return the summaries.
+
+    `backfill` fetches each indicator's full history instead of its latest
+    observations.
 
     The transaction commits when all indicators have been processed. If a
     database error is raised, everything written during the run is rolled
@@ -236,7 +244,7 @@ def run_pipeline(
     with connection(settings) as conn:
         with conn.cursor() as cur:
             sync_metadata(cur, indicators)
-            return [run_indicator(cur, i, settings, fetch, today) for i in indicators]
+            return [run_indicator(cur, i, settings, fetch, today, backfill) for i in indicators]
 
 
 def _failed(indicator_id: str, message: str) -> RunSummary:

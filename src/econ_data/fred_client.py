@@ -3,7 +3,8 @@
 fetch_observations() requests the observations for one indicator and returns
 them newest first. Requests have a timeout. Timeouts, connection errors, HTTP
 429 and HTTP 5xx are retried with doubling delays; any other failure raises
-FredError immediately. Error messages never contain the API key or the URL.
+FredError immediately. Every error message starts with the series ID and never
+contains the API key or the URL.
 """
 from __future__ import annotations
 
@@ -64,7 +65,7 @@ def fetch_observations(
     api_key = settings.fred_api_key.get_secret_value() if settings.fred_api_key else ""
     series_id = indicator.series_id
     if not api_key:
-        raise FredError("FRED_API_KEY is not set")
+        raise FredError(f"{series_id}: FRED_API_KEY is not set")
 
     params = {
         "series_id": series_id,

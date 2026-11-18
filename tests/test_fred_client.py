@@ -48,7 +48,7 @@ def fetch(session, limit=10, sleeps=None):
 
 def test_missing_api_key_raises_before_any_request():
     session = FakeSession()
-    with pytest.raises(FredError, match="FRED_API_KEY is not set"):
+    with pytest.raises(FredError, match="^DFF: FRED_API_KEY is not set"):
         fetch_observations(DFF, 10, Settings(), session=session)
     assert session.calls == []
 

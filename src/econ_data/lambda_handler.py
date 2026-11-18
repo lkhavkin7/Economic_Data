@@ -50,7 +50,7 @@ def fetch_all(settings: Settings) -> dict:
 
     failed = [s for s in summaries if not s.ok]
     if failed:
-        details = "; ".join(f"{s.indicator_id}: {s.error}" for s in failed)
+        details = "; ".join(s.error for s in failed)
         raise PipelineError(f"{len(failed)} of {len(summaries)} indicators failed ({details})")
 
     return {"mode": "fetch", "summaries": [asdict(s) for s in summaries]}

@@ -146,8 +146,9 @@ def test_fetch_raises_naming_every_failed_indicator(monkeypatch):
 
     message = str(exc.value)
     assert message.startswith("2 of 3 indicators failed")
-    assert "SP500: SP500: HTTP 500" in message
-    assert "VIXCLS: VIXCLS: FRED returned no observations" in message
+    assert "SP500: HTTP 500" in message
+    assert "VIXCLS: FRED returned no observations" in message
+    assert "SP500: SP500" not in message
     assert "DFF:" not in message
 
 
