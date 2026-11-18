@@ -39,7 +39,7 @@ INDICATORS: tuple[Indicator, ...] = (
         frequency="daily",
         units="percent",
         min_value=0,
-        max_value=20,
+        max_value=25,
         lookback=10,
     ),
     Indicator(
@@ -72,7 +72,7 @@ INDICATORS: tuple[Indicator, ...] = (
         frequency="monthly",
         units="percent",
         min_value=0,
-        max_value=20,
+        max_value=25,
         lookback=3,
     ),
     Indicator(

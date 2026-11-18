@@ -45,12 +45,19 @@ def test_observation_without_a_value_is_counted_as_missing_not_rejected():
 
 
 def test_value_outside_the_range_is_rejected_with_date_and_reason():
-    result = validate_observations(DFF, [obs("2026-11-12", 25.0)], TODAY)
+    result = validate_observations(DFF, [obs("2026-11-12", 30.0)], TODAY)
     assert result.rows == []
     assert result.rejected == 1
     assert result.rejection_examples == (
-        "2026-11-12: Effective Federal Funds Rate (percent) value 25.0 exceeds maximum 20",
+        f"2026-11-12: Effective Federal Funds Rate (percent) value 30.0 exceeds maximum {DFF.max_value}",
     )
+
+
+def test_range_holds_the_1981_peak_of_the_effective_rate():
+    # FRED's DFF history reaches 22.36 on 1981-07-22; a backfill must not reject it.
+    result = validate_observations(DFF, [obs("1981-07-22", 22.36)], TODAY)
+    assert result.rows == [("1981-07-22", 22.36)]
+    assert result.rejected == 0
 
 
 def test_invalid_date_is_rejected():
@@ -159,6 +166,12 @@ def test_run_indicator_requests_the_lookback_from_config(recorded_upserts):
     fetch = FetchRecorder([obs("2026-11-12", 4.33)])
     run_indicator(None, DFF, SETTINGS, fetch=fetch, today=TODAY)
     assert fetch.calls == [(DFF, DFF.lookback, SETTINGS)]
+
+
+def test_run_indicator_backfill_requests_the_full_history(recorded_upserts):
+    fetch = FetchRecorder([obs("2026-11-12", 4.33)])
+    run_indicator(None, DFF, SETTINGS, fetch=fetch, today=TODAY, backfill=True)
+    assert fetch.calls == [(DFF, None, SETTINGS)]
 
 
 def test_run_indicator_counts_each_kind_of_observation(recorded_upserts):
@@ -288,6 +301,21 @@ def test_run_pipeline_continues_after_a_fred_failure_and_still_commits(events):
     assert "upsert:DFEDTARU" not in events
     assert len([e for e in events if e.startswith("upsert:")]) == len(INDICATORS) - 1
     assert events[-1] == "commit"
+
+
+def test_run_pipeline_passes_backfill_to_every_indicator(events):
+    limits = []
+
+    def fetch(indicator, limit, settings):
+        limits.append(limit)
+        return midpoint_fetch()(indicator, limit, settings)
+
+    run_pipeline(SETTINGS, fetch=fetch, today=TODAY, backfill=True)
+    assert limits == [None] * len(INDICATORS)
+
+    limits.clear()
+    run_pipeline(SETTINGS, fetch=fetch, today=TODAY)
+    assert limits == [i.lookback for i in INDICATORS]
 
 
 def test_run_pipeline_only_runs_the_indicators_it_is_given(events):
