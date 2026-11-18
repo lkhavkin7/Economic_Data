@@ -1,5 +1,9 @@
-from contextlib import contextmanager
-from datetime import date
+"""lambda_handler logic that needs no database: choosing a mode, reporting failed
+indicators, and the schema file.
+
+verify, setup and a whole fetch run are tested against a real PostgreSQL server in
+tests/integration/test_lambda_db.
+"""
 from pathlib import Path
 
 import pytest
@@ -11,68 +15,15 @@ from src.econ_data.pipeline import RunSummary
 SETTINGS = Settings(db_name="econ_data")
 
 
-class FakeCursor:
-    def __init__(self, fetchone_result=None, fetchall_result=None):
-        self.executed = []
-        self._fetchone_result = fetchone_result
-        self._fetchall_result = fetchall_result or []
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        return False
-
-    def execute(self, query, params=None):
-        self.executed.append((query, params))
-
-    def fetchone(self):
-        return self._fetchone_result
-
-    def fetchall(self):
-        return self._fetchall_result
-
-
-class FakeConnection:
-    def __init__(self, cursor):
-        self._cursor = cursor
-        self.autocommit = False
-        self.closed = False
-
-    def cursor(self):
-        return self._cursor
-
-    def close(self):
-        self.closed = True
-
-
 @pytest.fixture
-def schema_file(tmp_path):
-    path = tmp_path / "schema.sql"
-    path.write_text("CREATE TABLE IF NOT EXISTS t (id INT);", encoding="utf-8")
-    return path
+def no_database(monkeypatch):
+    """Fail the test if anything tries to open a database connection."""
 
+    def fail(*args, **kwargs):
+        raise AssertionError("the database should not be used")
 
-@pytest.fixture
-def database(monkeypatch):
-    """Replace connect() and connection() with fakes. Returns what they were given.
-
-    Set `database["exists"]` to choose whether the maintenance query finds the database.
-    """
-    state = {"exists": True, "connect_settings": [], "maintenance": None, "target_cursor": FakeCursor()}
-
-    def fake_connect(settings):
-        state["connect_settings"].append(settings)
-        state["maintenance"] = FakeConnection(FakeCursor(fetchone_result=(1,) if state["exists"] else None))
-        return state["maintenance"]
-
-    @contextmanager
-    def fake_connection(settings):
-        yield FakeConnection(state["target_cursor"])
-
-    monkeypatch.setattr(handler, "connect", fake_connect)
-    monkeypatch.setattr(handler, "connection", fake_connection)
-    return state
+    monkeypatch.setattr(handler, "connect", fail)
+    monkeypatch.setattr(handler, "connection", fail)
 
 
 # --- lambda_handler: choosing a mode -----------------------------------------
@@ -161,126 +112,12 @@ def test_database_errors_from_the_pipeline_are_not_swallowed(monkeypatch):
         handler.fetch_all(SETTINGS)
 
 
-# --- verify_database ---------------------------------------------------------
-
-
-def test_verify_returns_count_and_latest_date_per_indicator(database):
-    database["target_cursor"] = FakeCursor(
-        fetchall_result=[("DFF", 120, date(2026, 11, 12)), ("SP500", 0, None)]
-    )
-
-    result = handler.verify_database(SETTINGS)
-
-    assert result == {
-        "mode": "verify",
-        "rows": [
-            {"indicator_id": "DFF", "count": 120, "max_date": "2026-11-12"},
-            {"indicator_id": "SP500", "count": 0, "max_date": None},
-        ],
-    }
-    assert database["target_cursor"].executed == [(handler.VERIFY_SQL, None)]
-
-
-def test_verify_on_an_empty_database_returns_no_rows(database):
-    assert handler.verify_database(SETTINGS)["rows"] == []
-
-
 # --- setup_database ----------------------------------------------------------
 
 
-def test_setup_creates_the_database_when_it_is_missing(database, schema_file):
-    database["exists"] = False
-
-    result = handler.setup_database(SETTINGS, schema_file)
-
-    assert result == {"mode": "setup", "database": "econ_data", "created": True, "schema_applied": True}
-    maintenance_cursor = database["maintenance"]._cursor
-    assert len(maintenance_cursor.executed) == 2
-    create_query = maintenance_cursor.executed[1][0]
-    assert create_query.seq[0].string == "CREATE DATABASE "
-    assert create_query.seq[1].strings == ("econ_data",)
-
-
-def test_setup_skips_creation_when_the_database_exists(database, schema_file):
-    database["exists"] = True
-
-    result = handler.setup_database(SETTINGS, schema_file)
-
-    assert result["created"] is False
-    assert result["schema_applied"] is True
-    queries = [str(q) for q, _ in database["maintenance"]._cursor.executed]
-    assert not any("CREATE DATABASE" in q for q in queries)
-
-
-def test_setup_checks_for_the_database_with_a_parameter(database, schema_file):
-    handler.setup_database(SETTINGS, schema_file)
-    query, params = database["maintenance"]._cursor.executed[0]
-    assert "datname = %s" in query
-    assert params == ("econ_data",)
-
-
-def test_setup_connects_to_the_maintenance_database_with_the_same_server(database, schema_file):
-    settings = Settings(db_host="db.example.com", db_name="econ_data")
-
-    handler.setup_database(settings, schema_file)
-
-    (used,) = database["connect_settings"]
-    assert used.db_name == handler.MAINTENANCE_DB
-    assert used.db_host == "db.example.com"
-    assert settings.db_name == "econ_data"  # the original settings are not changed
-
-
-def test_setup_uses_autocommit_and_closes_the_maintenance_connection(database, schema_file):
-    database["exists"] = False
-    handler.setup_database(SETTINGS, schema_file)
-    assert database["maintenance"].autocommit is True
-    assert database["maintenance"].closed is True
-
-
-def test_setup_closes_the_maintenance_connection_when_create_fails(
-    database, schema_file, monkeypatch
-):
-    database["exists"] = False
-    fake_connect = handler.connect
-
-    def connect_with_failing_create(settings):
-        conn = fake_connect(settings)
-        real_execute = conn._cursor.execute
-
-        def execute(query, params=None):
-            if "CREATE" in str(query):
-                raise RuntimeError("permission denied")
-            real_execute(query, params)
-
-        conn._cursor.execute = execute
-        return conn
-
-    monkeypatch.setattr(handler, "connect", connect_with_failing_create)
-
-    with pytest.raises(RuntimeError, match="permission denied"):
-        handler.setup_database(SETTINGS, schema_file)
-    assert database["maintenance"].closed is True
-
-
-def test_setup_applies_the_schema_file_to_the_target_database(database, schema_file):
-    handler.setup_database(SETTINGS, schema_file)
-    assert database["target_cursor"].executed == [("CREATE TABLE IF NOT EXISTS t (id INT);", None)]
-
-
-def test_database_name_is_quoted_as_an_identifier_not_pasted_into_the_sql(database, schema_file):
-    database["exists"] = False
-    hostile = 'x"; DROP DATABASE postgres; --'
-
-    handler.setup_database(Settings(db_name=hostile), schema_file)
-
-    create_query = database["maintenance"]._cursor.executed[1][0]
-    assert create_query.seq[1].strings == (hostile,)
-
-
-def test_missing_schema_file_fails_before_any_database_work(database, tmp_path):
+def test_missing_schema_file_fails_before_any_database_work(no_database, tmp_path):
     with pytest.raises(FileNotFoundError):
         handler.setup_database(SETTINGS, tmp_path / "nope.sql")
-    assert database["connect_settings"] == []
 
 
 def test_default_schema_path_points_at_the_schema_in_the_repo():
