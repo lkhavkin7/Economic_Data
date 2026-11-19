@@ -11,8 +11,9 @@ It tracks six series: three federal funds rates, the monthly average of the fund
 | Runs locally | Yes. Docker Compose starts PostgreSQL; the pipeline loads real FRED data. A full backfill has been run against it. |
 | Tests | Unit tests, plus integration tests that run against a real PostgreSQL server. See [Tests](#tests). |
 | MCP server | Works over stdio. A Streamable HTTP mode exists but is bound to localhost and has no authentication. |
-| AWS | **Not deployed right now.** An earlier version of this project ran on Lambda, RDS and a VPC, and was torn down to stop the cost. Its deployment scripts were removed in the rewrite. The Lambda entry point is in the code but has not been deployed since the rewrite. |
-| Scheduling, CI, monitoring | Not built yet. See [Roadmap](#roadmap). |
+| AWS | Built with Terraform and tested: a VPC, a private RDS database and a Lambda, with the `setup`, `fetch` and `verify` modes run by hand against real FRED data. The stack is destroyed when it is not in use, because it costs about $1.65 a day while running, so it is usually **not running**. See [Deploying to AWS](#deploying-to-aws). |
+| Scheduling | A daily EventBridge rule is defined in Terraform. A scheduled run has not been observed yet. |
+| CI, monitoring | Not built yet. See [Roadmap](#roadmap). |
 
 ## Architecture
 
@@ -42,6 +43,43 @@ Three entry points (the command line, the Lambda handler and the MCP `fetch_fres
 | `cli` | The command line, with a per-indicator table and exit codes. |
 | `lambda_handler` | AWS Lambda entry point with `fetch`, `verify` and `setup` modes. |
 | `mcp_server` | The MCP server. |
+
+### On AWS
+
+```mermaid
+flowchart TB
+    internet(["Internet<br/>FRED API"])
+
+    subgraph region["AWS region us-east-1"]
+        eb["EventBridge rule<br/>daily at 13:00 UTC"]
+        secret["Secrets Manager<br/>RDS-managed password"]
+
+        subgraph vpc["VPC 10.20.0.0/16"]
+            igw["Internet gateway"]
+
+            subgraph public["Public subnet 10.20.0.0/24"]
+                nat["NAT gateway<br/>fixed public IP"]
+            end
+
+            subgraph privA["Private subnet 10.20.10.0/24, us-east-1a"]
+                rds[("RDS PostgreSQL<br/>accepts only the Lambda")]
+            end
+
+            subgraph privB["Private subnet 10.20.11.0/24, us-east-1b"]
+                fn["Lambda<br/>no inbound rules"]
+            end
+        end
+    end
+
+    eb -->|"invokes"| fn
+    fn -->|"port 5432"| rds
+    fn -->|"outbound"| nat
+    nat --> igw
+    igw --> internet
+    fn -.->|"password, via the NAT"| secret
+```
+
+The database and the Lambda sit in private subnets with no route in from the internet. The database's security group accepts port 5432 from the Lambda's security group and from nothing else. The Lambda reaches FRED and Secrets Manager through the NAT gateway. It is attached to both private subnets and is drawn in one of them. EventBridge and Secrets Manager are regional services outside the VPC, and EventBridge calls the Lambda through the Lambda service, not through the network.
 
 ## Quick start
 
@@ -160,6 +198,52 @@ The HTTP mode has no authentication. Keep it on localhost.
 | `verify` | Returns the row count and latest date stored for each indicator. |
 | `setup` | Creates the database if it is missing, then applies `db/schema.sql`. Safe to repeat. |
 
+## Deploying to AWS
+
+The `infra/` folder is Terraform for everything in the [AWS diagram](#on-aws). You need an AWS account, [Terraform](https://developer.hashicorp.com/terraform/install) 1.6 or newer, the AWS CLI v2 signed in to that account, and the FRED API key.
+
+| File in `infra/` | Creates |
+|---|---|
+| `network.tf` | The VPC, one public and two private subnets, the internet gateway and the route tables. |
+| `security.tf` | The security groups and their rules, and locks down the VPC's default security group. |
+| `nat.tf` | The NAT gateway, its fixed public IP and the private subnets' route to it. |
+| `database.tf` | The RDS PostgreSQL 16 server. RDS creates the master password and keeps it in Secrets Manager. |
+| `iam.tf` | The Lambda's role: VPC and logging access, plus permission to read that one secret. |
+| `lambda.tf` | The Lambda function and its log group. |
+| `schedule.tf` | The daily EventBridge rule and the permission that lets it call the Lambda. |
+
+Build the package, then create the stack (Windows `cmd` syntax; on macOS and Linux use `export TF_VAR_fred_api_key=...`):
+
+```
+python scripts/build_lambda.py
+cd infra
+terraform init
+set TF_VAR_fred_api_key=your-fred-key
+terraform apply
+```
+
+`scripts/build_lambda.py` writes `build/lambda.zip`. It downloads the dependencies as Linux builds, so it works from Windows, and it produces the same bytes when nothing changed.
+
+Run each mode of the Lambda by hand (on macOS and Linux, write the payload as `'{"mode":"setup"}'`):
+
+```
+aws lambda invoke --function-name econ-data --cli-binary-format raw-in-base64-out --payload "{\"mode\":\"setup\"}" out.json
+aws lambda invoke --function-name econ-data --cli-binary-format raw-in-base64-out --payload "{\"mode\":\"fetch\"}" out.json
+aws lambda invoke --function-name econ-data --cli-binary-format raw-in-base64-out --payload "{\"mode\":\"verify\"}" out.json
+aws logs tail /aws/lambda/econ-data --since 15m
+```
+
+Remove everything with `terraform destroy`. The Lambda's network interfaces can take 10 to 20 minutes to be released, so the subnets and the Lambda's security group are the slowest part of a destroy. If it times out, run it again.
+
+**Cost.** While it runs, the NAT gateway costs about $0.045 an hour plus $0.045 per GB, its public IP about $0.005 an hour, and the `db.t4g.micro` database about $0.016 an hour plus storage: roughly $0.07 an hour, or $1.65 a day. Destroy the stack when you are not using it, and set an AWS budget alert.
+
+**Secrets.**
+- The database password is created by RDS and never appears in these files or in the Terraform state.
+- The FRED API key is passed as a sensitive variable. It ends up in the Lambda's environment settings and in the local `terraform.tfstate`.
+- Never commit `terraform.tfstate`, `.terraform/` or `*.tfvars`. They are in `.gitignore`.
+
+Terraform state is kept locally. Use a remote backend before sharing this with anyone else.
+
 ## Data notes
 
 | Indicator | Series | Frequency | Valid range |
@@ -214,8 +298,12 @@ mcp_config.json         template for an MCP host's configuration
 pytest.ini              test settings
 requirements.txt        runtime dependencies
 requirements-dev.txt    runtime plus test dependencies
+requirements-lambda.txt dependencies packaged into the Lambda zip
 db/
   schema.sql            tables
+infra/                  Terraform for the AWS deployment
+scripts/
+  build_lambda.py       builds build/lambda.zip (generated, ignored by git)
 src/econ_data/          the package (see Architecture)
 tests/                  unit tests
 tests/integration/      tests that use a real PostgreSQL server
@@ -223,7 +311,8 @@ tests/integration/      tests that use a real PostgreSQL server
 
 ## Roadmap
 
-- Infrastructure as code (Terraform) for the AWS deployment, with an EventBridge schedule for the daily run.
+- Watch the daily schedule fire, and verify a scheduled run end to end on a stack built from nothing.
+- A backfill mode for the Lambda. It currently loads only each indicator's recent observations.
 - CI: lint and tests on every push, deploy from `main`.
 - Monitoring: structured logs and an alarm when the daily run fails or stores nothing.
 - Authentication (OAuth 2.1) in front of the HTTP MCP server.
