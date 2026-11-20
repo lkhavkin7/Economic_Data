@@ -5,7 +5,6 @@ from pydantic import SecretStr
 
 from src.econ_data import db
 
-
 # --- connect -------------------------------------------------------------------
 
 

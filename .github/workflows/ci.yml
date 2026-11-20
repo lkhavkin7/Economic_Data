@@ -1,0 +1,92 @@
+# Continuous integration: checks every push and every pull request into main.
+# Three independent jobs: lint the Python, run the tests against a real PostgreSQL,
+# and validate the Terraform. None of them touches AWS.
+name: CI
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+
+# The checks only read the repository.
+permissions:
+  contents: read
+
+# A newer push to the same branch cancels the run still going for the older one.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - run: pip install ruff
+      - run: ruff check .
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The oldest Python the project supports, and the one the Lambda runs.
+        python-version: ["3.11", "3.13"]
+
+    # A PostgreSQL server that exists only for this job. Each matrix entry gets its own.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: econ
+          POSTGRES_PASSWORD: ci-only-password # not a secret: the server is unreachable from outside the job
+          POSTGRES_DB: econ_data
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U econ -d econ_data"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    # The same settings the tests read from .env on a laptop. GitHub also sets CI=true,
+    # which makes the integration tests fail, instead of skip, when the database is unreachable.
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      DB_NAME: econ_data
+      DB_USER: econ
+      DB_PASSWORD: ci-only-password
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest
+
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      # The Lambda resource reads build/lambda.zip, so the zip has to exist for validation.
+      # Building it here also checks that the build script works on a clean machine.
+      - run: python scripts/build_lambda.py
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "1.17.1"
+      - run: terraform fmt -check -recursive
+        working-directory: infra
+      - run: terraform init -backend=false
+        working-directory: infra
+      - run: terraform validate
+        working-directory: infra
