@@ -4,6 +4,7 @@ indicators, and the schema file.
 verify, setup and a whole fetch run are tested against a real PostgreSQL server in
 tests/integration/test_lambda_db.
 """
+import logging
 from pathlib import Path
 
 import pytest
@@ -82,6 +83,50 @@ def test_fetch_passes_the_settings_to_the_pipeline(monkeypatch):
     monkeypatch.setattr(handler, "run_pipeline", lambda settings: received.append(settings) or [])
     handler.fetch_all(SETTINGS)
     assert received == [SETTINGS]
+
+
+def _run_summary_records(caplog):
+    return [r for r in caplog.records if getattr(r, "event", None) == "run_summary"]
+
+
+def test_fetch_logs_one_run_summary_with_the_totals(monkeypatch, caplog):
+    summaries = [
+        RunSummary(indicator_id="DFF", fetched=10, inserted=2, updated=1, unchanged=7),
+        RunSummary(indicator_id="SP500", fetched=10, inserted=3, unchanged=7),
+    ]
+    monkeypatch.setattr(handler, "run_pipeline", lambda settings: summaries)
+
+    with caplog.at_level(logging.INFO):
+        handler.fetch_all(SETTINGS)
+
+    (record,) = _run_summary_records(caplog)
+    assert (record.indicators, record.failed) == (2, 0)
+    assert (record.inserted, record.updated, record.rows_written) == (5, 1, 6)
+
+
+def test_a_run_with_nothing_new_logs_zero_rows_written(monkeypatch, caplog):
+    summaries = [RunSummary(indicator_id="DFF", fetched=10, unchanged=10)]
+    monkeypatch.setattr(handler, "run_pipeline", lambda settings: summaries)
+
+    with caplog.at_level(logging.INFO):
+        handler.fetch_all(SETTINGS)
+
+    (record,) = _run_summary_records(caplog)
+    assert record.rows_written == 0
+
+
+def test_a_run_with_failures_logs_its_summary_before_raising(monkeypatch, caplog):
+    summaries = [
+        RunSummary(indicator_id="DFF", fetched=10, inserted=4),
+        RunSummary(indicator_id="SP500", error="SP500: HTTP 500"),
+    ]
+    monkeypatch.setattr(handler, "run_pipeline", lambda settings: summaries)
+
+    with caplog.at_level(logging.INFO), pytest.raises(handler.PipelineError):
+        handler.fetch_all(SETTINGS)
+
+    (record,) = _run_summary_records(caplog)
+    assert (record.indicators, record.failed, record.rows_written) == (2, 1, 4)
 
 
 def test_fetch_raises_naming_every_failed_indicator(monkeypatch):

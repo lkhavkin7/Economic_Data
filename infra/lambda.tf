@@ -24,6 +24,14 @@ resource "aws_lambda_function" "main" {
   timeout     = 300 # seconds
   memory_size = 256 # MB
 
+    # Writes every log line as JSON, so CloudWatch can search and count by field. Anything the
+  # code passes as logging's "extra" becomes a field of its own.
+  logging_config {
+    log_format            = "JSON"
+    application_log_level = "INFO" # the lowest level of the code's own log lines that is kept
+    log_group             = aws_cloudwatch_log_group.lambda.name
+  }
+
   # Runs the function inside the private subnets, wearing the Lambda security group.
   vpc_config {
     subnet_ids         = aws_subnet.private[*].id

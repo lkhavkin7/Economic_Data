@@ -39,3 +39,4 @@ package/
 *.tfstate.*
 *.tfvars
 crash.log
+out.json

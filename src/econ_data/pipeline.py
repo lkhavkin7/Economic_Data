@@ -212,6 +212,16 @@ def run_indicator(
         summary.unchanged,
         summary.missing,
         summary.rejected,
+        extra={
+            "event": "indicator_summary",
+            "indicator": indicator_id,
+            "fetched": summary.fetched,
+            "inserted": summary.inserted,
+            "updated": summary.updated,
+            "unchanged": summary.unchanged,
+            "missing": summary.missing,
+            "rejected": summary.rejected,
+        },
     )
     if summary.rejected:
         logger.warning(
@@ -219,6 +229,11 @@ def run_indicator(
             indicator_id,
             summary.rejected,
             "; ".join(summary.rejection_examples),
+            extra={
+                "event": "indicator_rejections",
+                "indicator": indicator_id,
+                "rejected": summary.rejected,
+            },
         )
     return summary
 
@@ -248,5 +263,5 @@ def run_pipeline(
 
 
 def _failed(indicator_id: str, message: str) -> RunSummary:
-    logger.error("%s", message)
+    logger.error("%s", message, extra={"event": "indicator_failed", "indicator": indicator_id})
     return RunSummary(indicator_id=indicator_id, error=message)

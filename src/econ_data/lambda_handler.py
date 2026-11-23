@@ -49,6 +49,28 @@ def fetch_all(settings: Settings) -> dict:
     summaries = run_pipeline(settings)
 
     failed = [s for s in summaries if not s.ok]
+
+    inserted = sum(s.inserted for s in summaries)
+    updated = sum(s.updated for s in summaries)
+
+    # One line per run, logged before any failure is raised. The "no new data" alarm
+    # counts rows_written from this line.
+    logger.info(
+        "run complete: %d indicators, %d failed, %d rows inserted, %d updated",
+        len(summaries),
+        len(failed),
+        inserted,
+        updated,
+        extra={
+            "event": "run_summary",
+            "indicators": len(summaries),
+            "failed": len(failed),
+            "inserted": inserted,
+            "updated": updated,
+            "rows_written": inserted + updated,
+        },
+    )
+
     if failed:
         details = "; ".join(s.error for s in failed)
         raise PipelineError(f"{len(failed)} of {len(summaries)} indicators failed ({details})")

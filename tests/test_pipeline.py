@@ -3,6 +3,7 @@
 Everything that reads or writes rows (the SQL, upserts, transactions, a whole
 run) is tested against a real PostgreSQL server in tests/integration/test_pipeline_db.
 """
+import logging
 from datetime import date
 
 import pytest
@@ -143,6 +144,30 @@ def test_unexpected_errors_are_not_swallowed():
     fetch = FetchRecorder(RuntimeError("bug"))
     with pytest.raises(RuntimeError, match="bug"):
         run_indicator(None, DFF, SETTINGS, fetch=fetch, today=TODAY)
+
+
+def _events(caplog, name):
+    return [r for r in caplog.records if getattr(r, "event", None) == name]
+
+
+def test_indicator_summary_and_rejections_are_logged_as_fields(caplog):
+    fetch = FetchRecorder([obs("2026-11-12", 99.0), obs("2026-11-11", 98.0)])
+    with caplog.at_level(logging.INFO):
+        run_indicator(None, DFF, SETTINGS, fetch=fetch, today=TODAY)
+
+    (summary,) = _events(caplog, "indicator_summary")
+    assert (summary.indicator, summary.fetched, summary.rejected, summary.inserted) == ("DFF", 2, 2, 0)
+    (rejections,) = _events(caplog, "indicator_rejections")
+    assert (rejections.indicator, rejections.rejected) == ("DFF", 2)
+
+
+def test_failed_indicator_is_logged_with_its_id(caplog):
+    fetch = FetchRecorder(FredError("DFF: HTTP 500"))
+    with caplog.at_level(logging.INFO):
+        run_indicator(None, DFF, SETTINGS, fetch=fetch, today=TODAY)
+
+    (failure,) = _events(caplog, "indicator_failed")
+    assert failure.indicator == "DFF"
 
 
 def test_run_summary_ok_reflects_error():
