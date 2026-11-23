@@ -1,0 +1,72 @@
+name: Deploy
+
+# Runs only when you press "Run workflow" in the Actions tab. It never runs by itself,
+# so the AWS stack (about $1.65 a day while it exists) only exists when you ask for it.
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "What to do with the AWS stack"
+        type: choice
+        options:
+          - apply
+          - destroy
+        default: apply
+
+# id-token: write lets the job ask GitHub for the signed token that AWS checks.
+permissions:
+  id-token: write
+  contents: read
+
+# Two deploys at once would fight over the same state, so a second one waits in line.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60 # a destroy can take 20+ minutes while AWS releases the Lambda's network interfaces
+    env:
+      ACTION: ${{ inputs.action }}
+      TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+      TF_VAR_fred_api_key: ${{ secrets.FRED_API_KEY }}
+      TF_IN_AUTOMATION: "true"
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      # Needed for destroy as well: Terraform reads the zip's hash even when it is only deleting.
+      - name: Build the Lambda zip
+        run: python scripts/build_lambda.py
+
+      # Swaps GitHub's signed token for one hour of AWS credentials. No stored keys.
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.17.1
+
+      - name: Terraform init
+        working-directory: infra
+        run: terraform init -input=false -backend-config="bucket=$TF_STATE_BUCKET"
+
+      - name: Terraform plan
+        working-directory: infra
+        run: |
+          if [ "$ACTION" = "destroy" ]; then
+            terraform plan -destroy -input=false -out=tfplan
+          else
+            terraform plan -input=false -out=tfplan
+          fi
+
+      # Applies exactly the plan made in the previous step, nothing newer.
+      - name: Terraform apply
+        working-directory: infra
+        run: terraform apply -input=false tfplan
