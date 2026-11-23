@@ -21,3 +21,15 @@ variable "github_branches" {
   type        = list(string)
   default     = ["main", "rewrite"]
 }
+
+# Has no default, so the address is never written in a file in the repository. Set it in the
+# terminal before running terraform: set TF_VAR_alert_email=<your address>
+variable "alert_email" {
+  description = "Where the alarm emails go."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", var.alert_email))
+    error_message = "alert_email must look like an email address, such as name@example.com."
+  }
+}

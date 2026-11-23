@@ -7,3 +7,8 @@ output "state_bucket" {
 output "github_deploy_role_arn" {
   value = aws_iam_role.github_deploy.arn
 }
+
+# For testing the topic from the terminal. The main stack finds the topic by its name.
+output "alerts_topic_arn" {
+  value = aws_sns_topic.alerts.arn
+}
