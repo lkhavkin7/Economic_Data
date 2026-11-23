@@ -24,7 +24,7 @@ resource "aws_lambda_function" "main" {
   timeout     = 300 # seconds
   memory_size = 256 # MB
 
-    # Writes every log line as JSON, so CloudWatch can search and count by field. Anything the
+  # Writes every log line as JSON, so CloudWatch can search and count by field. Anything the
   # code passes as logging's "extra" becomes a field of its own.
   logging_config {
     log_format            = "JSON"
