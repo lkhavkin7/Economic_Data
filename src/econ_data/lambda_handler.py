@@ -53,8 +53,8 @@ def fetch_all(settings: Settings) -> dict:
     inserted = sum(s.inserted for s in summaries)
     updated = sum(s.updated for s in summaries)
 
-    # One line per run, logged before any failure is raised. The "no new data" alarm
-    # counts rows_written from this line.
+    # One line per run, logged before any failure is raised, so a run in which some
+    # indicators failed still reports its totals.
     logger.info(
         "run complete: %d indicators, %d failed, %d rows inserted, %d updated",
         len(summaries),
