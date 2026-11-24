@@ -12,6 +12,10 @@ on:
           - apply
           - destroy
         default: apply
+      schedule:
+        description: "Optional EventBridge schedule for apply, such as rate(2 minutes). Empty keeps the daily default."
+        type: string
+        default: ""
 
 # id-token: write lets the job ask GitHub for the signed token that AWS checks.
 permissions:
@@ -29,6 +33,7 @@ jobs:
     timeout-minutes: 60 # a destroy can take 20+ minutes while AWS releases the Lambda's network interfaces
     env:
       ACTION: ${{ inputs.action }}
+      SCHEDULE: ${{ inputs.schedule }}
       TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
       TF_VAR_fred_api_key: ${{ secrets.FRED_API_KEY }}
       TF_IN_AUTOMATION: "true"
@@ -63,6 +68,7 @@ jobs:
           if [ "$ACTION" = "destroy" ]; then
             terraform plan -destroy -input=false -out=tfplan
           else
+            if [ -n "$SCHEDULE" ]; then export TF_VAR_schedule="$SCHEDULE"; fi
             terraform plan -input=false -out=tfplan
           fi
 
