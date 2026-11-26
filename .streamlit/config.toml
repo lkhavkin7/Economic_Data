@@ -1,0 +1,16 @@
+# Streamlit's own colors: 90% black background, light blue text.
+# The charts and tiles take the same colors from dashboard/charts.py.
+
+[theme]
+base = "dark"
+primaryColor = "#338ced"
+backgroundColor = "#1a1a1a"
+secondaryBackgroundColor = "#242424"
+textColor = "#cce3fd"
+font = "sans serif"
+
+[client]
+toolbarMode = "minimal"
+
+[browser]
+gatherUsageStats = false
