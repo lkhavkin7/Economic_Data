@@ -1,0 +1,10 @@
+# Settings for the linter, which CI runs on every push.
+line-length = 120
+target-version = "py311"
+extend-exclude = ["build"]  # the generated Lambda package, which holds other people's code
+src = ["."]                 # the repository root, so "src" counts as this project's own package
+
+[lint]
+# E and W: pycodestyle errors and warnings. F: pyflakes (unused imports and names, undefined names).
+# I: import order.
+select = ["E", "W", "F", "I"]

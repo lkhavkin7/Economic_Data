@@ -32,3 +32,11 @@ package/
 
 # pytest
 .pytest_cache/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+crash.log
+out.json

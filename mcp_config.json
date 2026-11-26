@@ -2,9 +2,9 @@
   "mcpServers": {
     "economic-data": {
       "command": "python",
-      "args": ["-m", "src.mcp_server"],
+      "args": ["-m", "src.econ_data.mcp_server"],
       "env": {
-        "POSTGRES_PASSWORD": "${POSTGRES_PASSWORD}",
+        "DB_PASSWORD": "${DB_PASSWORD}",
         "FRED_API_KEY": "${FRED_API_KEY}"
       }
     }

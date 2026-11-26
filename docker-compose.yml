@@ -1,0 +1,35 @@
+# Local development database: PostgreSQL with the project schema applied on first start.
+#
+#   docker compose up -d      start it in the background
+#   docker compose ps         show its status (wait for "healthy")
+#   docker compose down       stop and remove the container; the data is kept
+#   docker compose down -v    also delete the data volume
+#
+# Values come from the .env file next to this one (see .env.example).
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-econ}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
+      POSTGRES_DB: ${DB_NAME:-econ_data}
+    ports:
+      # Bound to 127.0.0.1 so only this computer can connect, not the network.
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
+    volumes:
+      - econ_pgdata:/var/lib/postgresql/data
+      # Files in this folder run once, when the data volume is empty. Read-only (:ro).
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      # -h 127.0.0.1 matters: while the schema is being applied, the server is
+      # only reachable through a local socket. Asking over TCP succeeds only
+      # once the real server is up.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  econ_pgdata:
